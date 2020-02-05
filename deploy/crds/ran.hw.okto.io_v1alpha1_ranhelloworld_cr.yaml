@@ -3,5 +3,4 @@ kind: RanHelloWorld
 metadata:
   name: example-ranhelloworld
 spec:
-  # Add fields here
-  size: 3
+  message: "hello world"
