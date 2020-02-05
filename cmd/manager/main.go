@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	routev1 "github.com/openshift/api/route/v1"
 	"os"
 	"runtime"
 
@@ -105,6 +106,11 @@ func main() {
 
 	// Setup Scheme for all resources
 	if err := apis.AddToScheme(mgr.GetScheme()); err != nil {
+		log.Error(err, "")
+		os.Exit(1)
+	}
+
+	if err := routev1.Install(mgr.GetScheme()); err != nil {
 		log.Error(err, "")
 		os.Exit(1)
 	}

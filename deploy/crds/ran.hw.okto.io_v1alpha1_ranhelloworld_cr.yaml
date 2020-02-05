@@ -1,0 +1,7 @@
+apiVersion: ran.hw.okto.io/v1alpha1
+kind: RanHelloWorld
+metadata:
+  name: example-ranhelloworld
+spec:
+  # Add fields here
+  size: 3
