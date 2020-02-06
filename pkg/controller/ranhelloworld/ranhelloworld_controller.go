@@ -188,6 +188,7 @@ func (r *ReconcileRanHelloWorld) Reconcile(request reconcile.Request) (reconcile
 	if err := r.client.Status().Update(context.TODO(), hw); err != nil {
 		reqLogger.Error(err, "Failed to update CR status")
 	}
+
 	return reconcile.Result{}, nil
 }
 
@@ -329,50 +330,41 @@ func (r *ReconcileRanHelloWorld) deploymentForWebServer(hw *ranv1alpha1.RanHello
 	labels := map[string]string{
 		"app": hw.Name,
 	}
-	dep := &appsv1.Deployment{
+	deployment.ObjectMeta.Name = hw.Name
+	deployment.ObjectMeta.Namespace = hw.Namespace
+	deployment.ObjectMeta.Labels = labels
+	deployment.Spec.Replicas = &replicas
+	deployment.Spec.Template = corev1.PodTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      hw.Name,
-			Namespace: hw.Namespace,
-			Labels:    labels,
+			Name:   hw.Name,
+			Labels: labels,
 		},
-		Spec: appsv1.DeploymentSpec{
-			Replicas: &replicas,
-			Selector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{"app": hw.Name},
-			},
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:   hw.Name,
-					Labels: labels,
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name:            hw.Name,
+					Image:           "docker.io/dimssss/nginx-for-ocp:0.1",
+					ImagePullPolicy: corev1.PullAlways,
+					Ports: []corev1.ContainerPort{
 						{
-							Name:            hw.Name,
-							Image:           "docker.io/dimssss/nginx-for-ocp:0.1",
-							ImagePullPolicy: corev1.PullAlways,
-							Ports: []corev1.ContainerPort{
-								{
-									ContainerPort: 8080,
-								},
-							},
-							VolumeMounts: []corev1.VolumeMount{
-								{
-									Name:      "website",
-									MountPath: "/opt/app-root/src",
-								},
-							},
+							ContainerPort: 8080,
 						},
 					},
-					Volumes: []corev1.Volume{
+					VolumeMounts: []corev1.VolumeMount{
 						{
-							Name: "website",
-							VolumeSource: corev1.VolumeSource{
-								ConfigMap: &corev1.ConfigMapVolumeSource{
-									LocalObjectReference: corev1.LocalObjectReference{
-										Name: hw.Name,
-									},
-								},
+							Name:      "website",
+							MountPath: "/opt/app-root/src",
+						},
+					},
+				},
+			},
+			Volumes: []corev1.Volume{
+				{
+					Name: "website",
+					VolumeSource: corev1.VolumeSource{
+						ConfigMap: &corev1.ConfigMapVolumeSource{
+							LocalObjectReference: corev1.LocalObjectReference{
+								Name: hw.Name,
 							},
 						},
 					},
@@ -380,7 +372,9 @@ func (r *ReconcileRanHelloWorld) deploymentForWebServer(hw *ranv1alpha1.RanHello
 			},
 		},
 	}
-	dep.DeepCopyInto(deployment)
+    deployment.Spec.Selector = &metav1.LabelSelector{
+	MatchLabels: map[string]string{"app": hw.Name},
+}
 	if err := controllerutil.SetControllerReference(hw, deployment, r.scheme); err != nil {
 		log.Error(err, "Error set controller reference for server deployment")
 		return err
