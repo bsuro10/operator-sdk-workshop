@@ -56,6 +56,14 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		return err
 	}
 
+	// Watch for changes to Deployment
+	err = c.Watch(&source.Kind{Type: &appsv1.Deployment{}}, &handler.EnqueueRequestForOwner{
+		IsController: true,
+		OwnerType:    &ranv1alpha1.RanHelloWorld{},
+	})
+	if err != nil {
+		return err
+	}
 	// Watch for changes to Service
 	err = c.Watch(&source.Kind{Type: &corev1.Service{}}, &handler.EnqueueRequestForOwner{
 		IsController: true,
@@ -139,7 +147,6 @@ func (r *ReconcileRanHelloWorld) Reconcile(request reconcile.Request) (reconcile
 		// In case requeue required
 		return *reconcileResult, nil
 	}
-
 	//Check if service already exists, if not create a new one
 	reconcileResult, err = r.manageService(hw, reqLogger)
 	if err != nil {
@@ -189,21 +196,32 @@ func (r *ReconcileRanHelloWorld) manageDeployment(hw *ranv1alpha1.RanHelloWorld,
 	deployment := &appsv1.Deployment{}
 	err := r.client.Get(context.TODO(), types.NamespacedName{Name: hw.Name, Namespace: hw.Namespace}, deployment)
 	if err != nil && errors.IsNotFound(err) {
-		serverDeployment, err := r.deploymentForWebServer(hw)
+		err := r.deploymentForWebServer(hw, deployment)
 		if err != nil {
 			reqLogger.Error(err, "error getting server deployment")
 			return &reconcile.Result{}, err
 		}
-		reqLogger.Info("Creating a new server deployment.", "Deployment.Namespace", serverDeployment.Namespace, "Deployment.Name", serverDeployment.Name)
-		err = r.client.Create(context.TODO(), serverDeployment)
+		reqLogger.Info("Creating a new server deployment.", "Deployment.Namespace", deployment.Namespace, "Deployment.Name", deployment.Name)
+		err = r.client.Create(context.TODO(), deployment)
 		if err != nil {
-			reqLogger.Error(err, "Failed to create new Server Deployment.", "Deployment.Namespace", serverDeployment.Namespace, "Deployment.Name", serverDeployment.Name)
+			reqLogger.Error(err, "Failed to create new Server Deployment.", "Deployment.Namespace", deployment.Namespace, "Deployment.Name", deployment.Name)
 			return &reconcile.Result{}, err
 		}
 		return &reconcile.Result{Requeue: true}, nil
 	} else if err != nil {
 		reqLogger.Error(err, "Failed to get server deployment.")
 		return &reconcile.Result{}, err
+	} else {
+		err := r.deploymentForWebServer(hw, deployment)
+		if err != nil {
+			reqLogger.Error(err, "error getting server deployment")
+			return &reconcile.Result{}, err
+		}
+		err = r.client.Update(context.TODO(), deployment)
+		if err != nil {
+			reqLogger.Error(err, "Failed to create new Server Deployment.", "Deployment.Namespace", deployment.Namespace, "Deployment.Name", deployment.Name)
+			return &reconcile.Result{}, err
+		}
 	}
 	return nil, nil
 }
@@ -305,7 +323,7 @@ func (r *ReconcileRanHelloWorld) manageConfigMap(hw *ranv1alpha1.RanHelloWorld, 
 }
 
 // Resources creation functions
-func (r *ReconcileRanHelloWorld) deploymentForWebServer(hw *ranv1alpha1.RanHelloWorld) (*appsv1.Deployment, error) {
+func (r *ReconcileRanHelloWorld) deploymentForWebServer(hw *ranv1alpha1.RanHelloWorld, deployment *appsv1.Deployment) error {
 	var replicas int32
 	replicas = 1
 	labels := map[string]string{
@@ -362,11 +380,13 @@ func (r *ReconcileRanHelloWorld) deploymentForWebServer(hw *ranv1alpha1.RanHello
 			},
 		},
 	}
-	if err := controllerutil.SetControllerReference(hw, dep, r.scheme); err != nil {
+	dep.DeepCopyInto(deployment)
+	if err := controllerutil.SetControllerReference(hw, deployment, r.scheme); err != nil {
 		log.Error(err, "Error set controller reference for server deployment")
-		return nil, err
+		return err
 	}
-	return dep, nil
+
+	return nil
 }
 
 func (r *ReconcileRanHelloWorld) serviceForWebServer(hw *ranv1alpha1.RanHelloWorld, service *corev1.Service) error {
@@ -448,6 +468,7 @@ func (r *ReconcileRanHelloWorld) syncConfigMapForWebServer(hw *ranv1alpha1.RanHe
 	return false, nil
 }
 
+// Finalizers
 func (r *ReconcileRanHelloWorld) initFinalization(hw *ranv1alpha1.RanHelloWorld, reqLogger logr.Logger) error {
 	isHwMarkedToBeDeleted := hw.GetDeletionTimestamp() != nil
 	if isHwMarkedToBeDeleted {
